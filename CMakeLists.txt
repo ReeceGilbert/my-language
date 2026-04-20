@@ -10,4 +10,11 @@ add_executable(my_language
         lexer.c
         parser.c
         ast.c
+        runtime.c
+        builtins.c
+        builtins.h
+        env.c
+        env.h
+        value.c
+        value.h
 )

@@ -1,9 +1,12 @@
 // main.c
 #include <stdio.h>
 #include <stdlib.h>
+
 #include "token.h"
 #include "parser.h"
 #include "lexer.h"
+#include "runtime.h"
+#include "ast.h"
 
 static char* readEntireFile(const char* path) {
     FILE* file = fopen(path, "rb");
@@ -59,6 +62,8 @@ int main(void) {
     TokenArray tokens;
     Diagnostics diagnostics;
     AstNode* root;
+    Runtime runtime;
+    ExecResult execResult;
 
     initDiagnostics(&diagnostics);
 
@@ -90,6 +95,21 @@ int main(void) {
 
     printDiagnosticsSummary(&diagnostics);
 
+    if (root != NULL) {
+        printf("\n=== EXECUTION ===\n");
+
+        runtimeInit(&runtime);
+        execResult = runtimeExecuteNode(&runtime, root);
+
+        if (runtime.hadError) {
+            fprintf(stderr, "Runtime error: %s\n", runtime.errorMessage);
+        }
+
+        freeValue(&execResult.value);
+        runtimeFree(&runtime);
+    }
+
+    freeAst(root);
     freeTokenArray(&tokens);
     free(source);
     return 0;

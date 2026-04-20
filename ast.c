@@ -2,6 +2,124 @@
 #include <stdlib.h>
 #include "ast.h"
 
+void freeAstNodeArray(AstNodeArray* array) {
+    int i;
+
+    if (array == NULL) {
+        return;
+    }
+
+    for (i = 0; i < array->count; i++) {
+        freeAst(array->items[i]);
+    }
+
+    free(array->items);
+    array->items = NULL;
+    array->count = 0;
+    array->capacity = 0;
+}
+
+void freeTokenList(TokenList* list) {
+    if (list == NULL) {
+        return;
+    }
+
+    free(list->items);
+    list->items = NULL;
+    list->count = 0;
+    list->capacity = 0;
+}
+
+void freeAst(AstNode* node) {
+    if (node == NULL) {
+        return;
+    }
+
+    switch (node->type) {
+        case AST_MODULE:
+            freeAstNodeArray(&node->as.module.statements);
+            break;
+
+        case AST_BLOCK:
+            freeAstNodeArray(&node->as.block.statements);
+            break;
+
+        case AST_EXPR_STMT:
+            freeAst(node->as.exprStmt.expression);
+            break;
+
+        case AST_ASSIGN_STMT:
+            freeAst(node->as.assignStmt.target);
+            freeAst(node->as.assignStmt.value);
+            break;
+
+        case AST_RETURN_STMT:
+            freeAst(node->as.returnStmt.value);
+            break;
+
+        case AST_IF_STMT:
+            freeAst(node->as.ifStmt.condition);
+            freeAst(node->as.ifStmt.thenBlock);
+            freeAst(node->as.ifStmt.elseBranch);
+            break;
+
+        case AST_FOR_STMT:
+            freeAst(node->as.forStmt.target);
+            freeAst(node->as.forStmt.iterable);
+            freeAst(node->as.forStmt.body);
+            break;
+
+        case AST_WHILE_STMT:
+            freeAst(node->as.whileStmt.condition);
+            freeAst(node->as.whileStmt.body);
+            break;
+
+        case AST_FUNCTION_DEF:
+            freeTokenList(&node->as.functionDef.parameters);
+            freeAst(node->as.functionDef.body);
+            break;
+
+        case AST_CLASS_DEF:
+            freeAst(node->as.classDef.body);
+            break;
+
+        case AST_PASS_STMT:
+        case AST_BREAK_STMT:
+        case AST_CONTINUE_STMT:
+            break;
+
+        case AST_BINARY_EXPR:
+            freeAst(node->as.binaryExpr.left);
+            freeAst(node->as.binaryExpr.right);
+            break;
+
+        case AST_UNARY_EXPR:
+            freeAst(node->as.unaryExpr.operand);
+            break;
+
+        case AST_LITERAL_EXPR:
+            break;
+
+        case AST_IDENTIFIER_EXPR:
+            break;
+
+        case AST_GROUPING_EXPR:
+            freeAst(node->as.groupingExpr.expression);
+            break;
+
+        case AST_CALL_EXPR:
+            freeAst(node->as.callExpr.callee);
+            freeAstNodeArray(&node->as.callExpr.arguments);
+            break;
+
+        case AST_MEMBER_EXPR:
+            freeAst(node->as.memberExpr.object);
+            break;
+    }
+
+    free(node);
+}
+
 void initAstNodeArray(AstNodeArray* array) {
     array->items = NULL;
     array->count = 0;

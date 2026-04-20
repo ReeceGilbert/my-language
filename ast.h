@@ -146,4 +146,8 @@ AstNode* makeLiteralNode(Token literal);
 
 void printAst(const AstNode* node, int depth);
 
+void freeAst(AstNode* node);
+void freeAstNodeArray(AstNodeArray* array);
+void freeTokenList(TokenList* list);
+
 #endif
