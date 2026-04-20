@@ -1,9 +1,13 @@
-cmake_minimum_required(VERSION 4.1)
-project(untitled3 C)
+cmake_minimum_required(VERSION 3.20)
+
+project(my_language C)
 
 set(CMAKE_C_STANDARD 11)
+set(CMAKE_C_STANDARD_REQUIRED ON)
 
-add_executable(untitled3 main.c
+add_executable(my_language
+        main.c
+        lexer.c
         parser.c
-        token_shared.h
-        parser.h)
+        ast.c
+)

@@ -1,5 +1,5 @@
-#ifndef TOKEN_SHARED_H
-#define TOKEN_SHARED_H
+#ifndef TOKEN_H
+#define TOKEN_H
 
 #define MAX_INDENTS 256
 #define TAB_WIDTH 4
