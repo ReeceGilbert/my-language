@@ -1,20 +1,31 @@
-cmake_minimum_required(VERSION 3.20)
-
+cmake_minimum_required(VERSION 3.31)
 project(my_language C)
 
 set(CMAKE_C_STANDARD 11)
-set(CMAKE_C_STANDARD_REQUIRED ON)
 
-add_executable(my_language
+set(SOURCES
         main.c
         lexer.c
         parser.c
         ast.c
         runtime.c
-        builtins.c
-        builtins.h
-        env.c
-        env.h
         value.c
+        env.c
+        builtins.c
+)
+
+set(HEADERS
+        lexer.h
+        parser.h
+        ast.h
+        runtime.h
         value.h
+        env.h
+        builtins.h
+        token.h
+)
+
+add_executable(my_language
+        ${SOURCES}
+        ${HEADERS}
 )
