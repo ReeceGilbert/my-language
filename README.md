@@ -4,6 +4,9 @@ A Python-inspired language project written in C, built with the long-term goal o
 
 This project is not meant to be a toy parser or a throwaway syntax experiment. The goal is to build a real language/runtime with Python-like semantics, a clean internal architecture, and a minimal native C bridge for machine-facing capabilities that higher-level libraries can be built on top of later.
 
+Website:
+https://nearoh-core-lang.base44.app
+
 ---
 
 ## Vision
