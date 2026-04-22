@@ -1,4 +1,4 @@
-# My Language
+# Nearoh Coding Language
 
 A Python-inspired language project written in C, built with the long-term goal of becoming a usable everyday language for my own workflow.
 
