@@ -25,7 +25,8 @@ typedef enum {
     AST_IDENTIFIER_EXPR,
     AST_GROUPING_EXPR,
     AST_CALL_EXPR,
-    AST_MEMBER_EXPR
+    AST_MEMBER_EXPR,
+    AST_LIST_EXPR
 } AstNodeType;
 
 typedef struct AstNode AstNode;
@@ -128,6 +129,10 @@ struct AstNode {
             AstNode* object;
             Token member;
         } memberExpr;
+
+        struct {
+            AstNodeArray elements;
+        } listExpr;
     } as;
 };
 

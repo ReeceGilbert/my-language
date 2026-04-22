@@ -22,6 +22,55 @@ static char* duplicateString(const char* s) {
     return copy;
 }
 
+static int ensureListCapacity(ListObject* list) {
+    Value* newItems;
+    int newCapacity;
+
+    if (list == NULL) {
+        return 0;
+    }
+
+    if (list->count < list->capacity) {
+        return 1;
+    }
+
+    newCapacity = (list->capacity < 8) ? 8 : list->capacity * 2;
+    newItems = (Value*)realloc(list->items, sizeof(Value) * (size_t)newCapacity);
+    if (newItems == NULL) {
+        return 0;
+    }
+
+    list->items = newItems;
+    list->capacity = newCapacity;
+    return 1;
+}
+
+ListObject* createListObject(void) {
+    ListObject* list = (ListObject*)malloc(sizeof(ListObject));
+    if (list == NULL) {
+        return NULL;
+    }
+
+    list->items = NULL;
+    list->count = 0;
+    list->capacity = 0;
+    return list;
+}
+
+int listAppend(ListObject* list, Value value) {
+    if (list == NULL) {
+        return 0;
+    }
+
+    if (!ensureListCapacity(list)) {
+        return 0;
+    }
+
+    list->items[list->count] = copyValue(&value);
+    list->count++;
+    return 1;
+}
+
 Value makeNone(void) {
     Value v;
     v.type = VAL_NONE;
@@ -88,14 +137,39 @@ Value makeBoundMethod(BoundMethodObject* boundMethod) {
     return v;
 }
 
+Value makeList(ListObject* list) {
+    Value v;
+    v.type = VAL_LIST;
+    v.as.list = list;
+    return v;
+}
+
 void freeValue(Value* value) {
+    int i;
+
     if (value == NULL) {
         return;
     }
 
-    if (value->type == VAL_STRING) {
-        free(value->as.string);
-        value->as.string = NULL;
+    switch (value->type) {
+        case VAL_STRING:
+            free(value->as.string);
+            value->as.string = NULL;
+            break;
+
+        case VAL_LIST:
+            if (value->as.list != NULL) {
+                for (i = 0; i < value->as.list->count; i++) {
+                    freeValue(&value->as.list->items[i]);
+                }
+                free(value->as.list->items);
+                free(value->as.list);
+                value->as.list = NULL;
+            }
+            break;
+
+        default:
+            break;
     }
 
     value->type = VAL_NONE;
@@ -134,6 +208,35 @@ Value copyValue(const Value* value) {
         case VAL_BOUND_METHOD:
             return makeBoundMethod(value->as.boundMethod);
 
+        case VAL_LIST: {
+            ListObject* src = value->as.list;
+            ListObject* dst;
+            int i;
+
+            if (src == NULL) {
+                return makeList(NULL);
+            }
+
+            dst = createListObject();
+            if (dst == NULL) {
+                return makeNone();
+            }
+
+            for (i = 0; i < src->count; i++) {
+                if (!listAppend(dst, src->items[i])) {
+                    int j;
+                    for (j = 0; j < dst->count; j++) {
+                        freeValue(&dst->items[j]);
+                    }
+                    free(dst->items);
+                    free(dst);
+                    return makeNone();
+                }
+            }
+
+            return makeList(dst);
+        }
+
         default:
             return makeNone();
     }
@@ -163,6 +266,9 @@ int valueIsTruthy(const Value* value) {
         case VAL_INSTANCE:
         case VAL_BOUND_METHOD:
             return 1;
+
+        case VAL_LIST:
+            return value->as.list != NULL && value->as.list->count > 0;
 
         default:
             return 0;
@@ -209,6 +315,9 @@ int valueEquals(const Value* a, const Value* b) {
         case VAL_BOUND_METHOD:
             return a->as.boundMethod == b->as.boundMethod;
 
+        case VAL_LIST:
+            return a->as.list == b->as.list;
+
         default:
             return 0;
     }
@@ -247,12 +356,17 @@ const char* valueTypeName(const Value* value) {
         case VAL_BOUND_METHOD:
             return "bound_method";
 
+        case VAL_LIST:
+            return "list";
+
         default:
             return "unknown";
     }
 }
 
 void printValue(const Value* value) {
+    int i;
+
     if (value == NULL) {
         printf("none");
         return;
@@ -317,6 +431,22 @@ void printValue(const Value* value) {
             } else {
                 printf("<bound method>");
             }
+            break;
+
+        case VAL_LIST:
+            if (value->as.list == NULL) {
+                printf("[]");
+                break;
+            }
+
+            printf("[");
+            for (i = 0; i < value->as.list->count; i++) {
+                if (i > 0) {
+                    printf(", ");
+                }
+                printValue(&value->as.list->items[i]);
+            }
+            printf("]");
             break;
 
         default:

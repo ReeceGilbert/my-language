@@ -15,6 +15,7 @@ typedef struct ClassObject ClassObject;
 typedef struct InstanceField InstanceField;
 typedef struct InstanceObject InstanceObject;
 typedef struct BoundMethodObject BoundMethodObject;
+typedef struct ListObject ListObject;
 
 struct FunctionObject {
     char* name;
@@ -47,8 +48,15 @@ typedef enum {
     VAL_FUNCTION,
     VAL_CLASS,
     VAL_INSTANCE,
-    VAL_BOUND_METHOD
+    VAL_BOUND_METHOD,
+    VAL_LIST
 } ValueType;
+
+struct ListObject {
+    Value* items;
+    int count;
+    int capacity;
+};
 
 struct Value {
     ValueType type;
@@ -61,6 +69,7 @@ struct Value {
         ClassObject* classObject;
         InstanceObject* instance;
         BoundMethodObject* boundMethod;
+        ListObject* list;
     } as;
 };
 
@@ -98,6 +107,10 @@ Value makeFunction(FunctionObject* function);
 Value makeClass(ClassObject* classObject);
 Value makeInstance(InstanceObject* instance);
 Value makeBoundMethod(BoundMethodObject* boundMethod);
+Value makeList(ListObject* list);
+
+ListObject* createListObject(void);
+int listAppend(ListObject* list, Value value);
 
 void freeValue(Value* value);
 Value copyValue(const Value* value);

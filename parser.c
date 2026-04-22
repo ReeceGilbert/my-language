@@ -155,6 +155,7 @@ static AstNode* parseFactor(ParseState* parser);
 static AstNode* parseUnary(ParseState* parser);
 static AstNode* parseCall(ParseState* parser);
 static AstNode* parsePrimary(ParseState* parser);
+static AstNode* parseListLiteral(ParseState* parser);
 
 // ------------------------------------------------------------
 // PROGRAM / DECLARATIONS
@@ -794,6 +795,37 @@ static AstNode* parseCall(ParseState* parser) {
     return expr;
 }
 
+static AstNode* parseListLiteral(ParseState* parser) {
+    Token open;
+    AstNode* list;
+
+    if (!parserMatch(parser, TOKEN_LBRACKET)) {
+        parserErrorAtToken(parser, parserPeek(parser), "Expected '['.");
+        return NULL;
+    }
+
+    open = *parserPrevious(parser);
+    list = newAstNode(AST_LIST_EXPR, open);
+    initAstNodeArray(&list->as.listExpr.elements);
+
+    if (!parserCheck(parser, TOKEN_RBRACKET)) {
+        do {
+            AstNode* element = parseExpression(parser);
+            if (element == NULL) {
+                return NULL;
+            }
+
+            pushAstNode(&list->as.listExpr.elements, element);
+        } while (parserMatch(parser, TOKEN_COMMA));
+    }
+
+    if (parserConsume(parser, TOKEN_RBRACKET, "Expected ']' after list literal.") == NULL) {
+        return NULL;
+    }
+
+    return list;
+}
+
 static AstNode* parsePrimary(ParseState* parser) {
     if (parserMatch(parser, TOKEN_NUMBER) ||
         parserMatch(parser, TOKEN_STRING) ||
@@ -801,6 +833,18 @@ static AstNode* parsePrimary(ParseState* parser) {
         parserMatch(parser, TOKEN_FALSE) ||
         parserMatch(parser, TOKEN_NONE)) {
         return makeLiteralNode(*parserPrevious(parser));
+    }
+
+    if (parserMatch(parser, TOKEN_NUMBER) ||
+    parserMatch(parser, TOKEN_STRING) ||
+    parserMatch(parser, TOKEN_TRUE) ||
+    parserMatch(parser, TOKEN_FALSE) ||
+    parserMatch(parser, TOKEN_NONE)) {
+        return makeLiteralNode(*parserPrevious(parser));
+    }
+
+    if (parserCheck(parser, TOKEN_LBRACKET)) {
+        return parseListLiteral(parser);
     }
 
     if (parserMatch(parser, TOKEN_IDENTIFIER)) {

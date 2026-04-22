@@ -17,6 +17,93 @@ static char* copyTokenText(Token token) {
     return text;
 }
 
+static Token makeSyntheticIdentifierToken(const char* text) {
+    Token token;
+
+    token.type = TOKEN_IDENTIFIER;
+    token.start = text;
+    token.length = (int)strlen(text);
+    token.line = 0;
+    token.column = 0;
+    token.offset = 0;
+
+    return token;
+}
+
+static int assignLoopVariable(Runtime* runtime, Token nameToken, Value value) {
+    char* name = copyTokenText(nameToken);
+
+    if (name == NULL) {
+        runtimeError(runtime, "Out of memory while assigning loop variable.");
+        return 0;
+    }
+
+    if (!envAssign(runtime->current, name, value)) {
+        if (!envDefine(runtime->current, name, value)) {
+            free(name);
+            runtimeError(runtime, "Failed to assign loop variable.");
+            return 0;
+        }
+    }
+
+    free(name);
+    return 1;
+}
+
+static int requireListIterable(Runtime* runtime, const Value* iterable) {
+    if (iterable->type != VAL_LIST) {
+        runtimeError(runtime, "For-loop iterable must be a list.");
+        return 0;
+    }
+    return 1;
+}
+
+static ExecResult executeForList(Runtime* runtime, AstNode* loopTarget, Value iterableValue, AstNode* body) {
+    Token loopVar;
+    int i;
+    ExecResult result;
+
+    if (loopTarget == NULL || loopTarget->type != AST_IDENTIFIER_EXPR) {
+        runtimeError(runtime, "For-loop target must be an identifier.");
+        return execError();
+    }
+
+    if (!requireListIterable(runtime, &iterableValue)) {
+        return execError();
+    }
+
+    loopVar = loopTarget->as.identifierExpr.name;
+
+    for (i = 0; i < iterableValue.as.list->count; i++) {
+        Value elementCopy = copyValue(&iterableValue.as.list->items[i]);
+
+        if (!assignLoopVariable(runtime, loopVar, elementCopy)) {
+            freeValue(&elementCopy);
+            return execError();
+        }
+
+        freeValue(&elementCopy);
+
+        result = runtimeExecuteNode(runtime, body);
+
+        if (result.type == FLOW_BREAK) {
+            freeValue(&result.value);
+            return execNormal();
+        }
+
+        if (result.type == FLOW_CONTINUE) {
+            freeValue(&result.value);
+            continue;
+        }
+
+        if (result.type != FLOW_NORMAL) {
+            return result;
+        }
+    }
+
+    return execNormal();
+}
+
 static int requireNumberOperands(Runtime* runtime, const Value* left, const Value* right) {
     if (left->type != VAL_NUMBER || right->type != VAL_NUMBER) {
         runtimeError(runtime, "Operator requires number operands.");
@@ -177,7 +264,6 @@ static BoundMethodObject* createBoundMethod(Runtime* runtime, InstanceObject* re
     boundMethod->method = method;
     return boundMethod;
 }
-
 
 static ClassObject* createClassObject(Runtime* runtime, AstNode* node) {
     ClassObject* classObject;
@@ -503,11 +589,10 @@ static Value evalCall(Runtime* runtime, AstNode* node) {
 
         case VAL_CLASS: {
             InstanceObject* instance;
-
-            if (argCount != 0) {
-                runtimeError(runtime, "Class instantiation does not support constructor arguments yet.");
-                break;
-            }
+            FunctionObject* initMethod;
+            BoundMethodObject* boundInit;
+            Token initName;
+            Value initResult;
 
             instance = createInstanceObject(runtime, callee.as.classObject);
             if (runtime->hadError) {
@@ -515,6 +600,37 @@ static Value evalCall(Runtime* runtime, AstNode* node) {
             }
 
             result = makeInstance(instance);
+
+            initName = makeSyntheticIdentifierToken("__init__");
+            initMethod = classFindMethod(callee.as.classObject, initName);
+
+            if (initMethod != NULL) {
+                boundInit = createBoundMethod(runtime, instance, initMethod);
+                if (runtime->hadError || boundInit == NULL) {
+                    freeValue(&result);
+                    result = makeNone();
+                    break;
+                }
+
+                initResult = callBoundMethod(runtime, boundInit, argCount, args);
+
+                freeValue(&initResult);
+                free(boundInit);
+
+                if (runtime->hadError) {
+                    freeValue(&result);
+                    result = makeNone();
+                    break;
+                }
+            } else {
+                if (argCount != 0) {
+                    freeValue(&result);
+                    result = makeNone();
+                    runtimeError(runtime, "Constructor arguments given but no __init__ method exists.");
+                    break;
+                }
+            }
+
             break;
         }
 
@@ -1021,6 +1137,51 @@ Value runtimeEvalExpression(Runtime* runtime, AstNode* node) {
             return makeNone();
         }
 
+        case AST_LIST_EXPR: {
+            ListObject* list;
+            int i;
+
+            list = createListObject();
+            if (list == NULL) {
+                runtimeError(runtime, "Out of memory while creating list.");
+                return makeNone();
+            }
+
+            for (i = 0; i < node->as.listExpr.elements.count; i++) {
+                Value element = runtimeEvalExpression(runtime, node->as.listExpr.elements.items[i]);
+
+                if (runtime->hadError) {
+                    int j;
+                    for (j = 0; j < list->count; j++) {
+                        freeValue(&list->items[j]);
+                    }
+                    free(list->items);
+                    free(list);
+                    return makeNone();
+                }
+
+                if (!listAppend(list, element)) {
+                    freeValue(&element);
+
+                    {
+                        int j;
+                        for (j = 0; j < list->count; j++) {
+                            freeValue(&list->items[j]);
+                        }
+                    }
+
+                    free(list->items);
+                    free(list);
+                    runtimeError(runtime, "Out of memory while appending list element.");
+                    return makeNone();
+                }
+
+                freeValue(&element);
+            }
+
+            return makeList(list);
+        }
+
         default:
             runtimeError(runtime, "Unsupported expression node.");
             return makeNone();
@@ -1185,9 +1346,25 @@ ExecResult runtimeExecuteNode(Runtime* runtime, AstNode* node) {
             return execNormal();
         }
 
-        case AST_FOR_STMT:
-            runtimeError(runtime, "For-loops are not supported yet.");
-            return execError();
+        case AST_FOR_STMT: {
+            Value iterableValue;
+            ExecResult forResult;
+
+            iterableValue = runtimeEvalExpression(runtime, node->as.forStmt.iterable);
+            if (runtime->hadError) {
+                return execError();
+            }
+
+            forResult = executeForList(
+                runtime,
+                node->as.forStmt.target,
+                iterableValue,
+                node->as.forStmt.body
+            );
+
+            freeValue(&iterableValue);
+            return forResult;
+        }
 
         default:
             runtimeError(runtime, "Unhandled AST node in runtime.");
