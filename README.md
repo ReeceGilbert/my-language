@@ -124,7 +124,7 @@ Expected Output:
 
 ⸻
 
-#Arena Showcase
+# Arena Showcase
 
 arena_showcase.nr is a larger demonstration program proving that Nearoh can coordinate multiple systems together.
 
@@ -144,7 +144,7 @@ This moves Nearoh beyond syntax demos into real executable projects.
 
 ⸻
 
-#Why This Project Matters
+# Why This Project Matters
 
 Many hobby language projects stop at parsing expressions.
 
@@ -162,23 +162,23 @@ That means the project is moving into genuine language engineering territory.
 
 ⸻
 
-#Roadmap
+# Roadmap
 
-Near-Term
+## Near-Term
 	•	Dictionaries / maps
 	•	Better runtime error messages
 	•	Cleaner diagnostics with line numbers
 	•	Standard library utilities
 	•	File I/O
 
-Mid-Term
+## Mid-Term
 	•	Modules / imports
 	•	Expanded builtins
 	•	Better performance paths
 	•	Improved memory systems
 	•	Tooling improvements
 
-Long-Term
+## Long-Term
 	•	Native graphics / window bridge
 	•	Input / timing systems
 	•	Bytecode VM or compiled backend research
@@ -187,7 +187,7 @@ Long-Term
 
 ⸻
 
-#Philosophy
+# Philosophy
 
 Nearoh is being built carefully and intentionally.
 
@@ -200,7 +200,7 @@ Low-level power underneath.
 
 ⸻
 
-#Author
+# Author
 
 Built by Reece Gilbert.
 
@@ -208,7 +208,7 @@ This project reflects years of programming curiosity, systems experimentation, g
 
 ⸻
 
-#Current Stage
+# Current Stage
 
 Nearoh is early, active, and growing quickly.
 
