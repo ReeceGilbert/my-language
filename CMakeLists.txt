@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.31)
-project(my_language C)
+project(nearoh C)
 
 set(CMAKE_C_STANDARD 11)
 
@@ -25,7 +25,7 @@ set(HEADERS
         token.h
 )
 
-add_executable(my_language
+add_executable(nearoh
         ${SOURCES}
         ${HEADERS}
 )

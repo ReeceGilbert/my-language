@@ -1,6 +1,7 @@
 // main.c
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "token.h"
 #include "parser.h"
@@ -56,14 +57,58 @@ static char* readEntireFile(const char* path) {
     return buffer;
 }
 
-int main(void) {
-    const char* inputPath = "input.txt";
+typedef enum {
+    MODE_RUN,
+    MODE_TOKENS,
+    MODE_AST,
+    MODE_DEBUG
+} RunMode;
+
+static void printUsage(void) {
+    fprintf(stderr,
+            "Usage:\n"
+            "  nearoh <file.nr>\n"
+            "  nearoh --tokens <file.nr>\n"
+            "  nearoh --ast <file.nr>\n"
+            "  nearoh --debug <file.nr>\n");
+}
+
+int main(int argc, char** argv) {
+    const char* inputPath;
+    RunMode mode = MODE_RUN;
+
     char* source;
     TokenArray tokens;
     Diagnostics diagnostics;
     AstNode* root;
     Runtime runtime;
     ExecResult execResult;
+
+    if (argc < 2) {
+        printUsage();
+        return 1;
+    }
+
+    if (argc == 2) {
+        inputPath = argv[1];
+    } else if (argc == 3) {
+        inputPath = argv[2];
+
+        if (strcmp(argv[1], "--tokens") == 0) {
+            mode = MODE_TOKENS;
+        } else if (strcmp(argv[1], "--ast") == 0) {
+            mode = MODE_AST;
+        } else if (strcmp(argv[1], "--debug") == 0) {
+            mode = MODE_DEBUG;
+        } else {
+            fprintf(stderr, "Unknown option: %s\n", argv[1]);
+            printUsage();
+            return 1;
+        }
+    } else {
+        printUsage();
+        return 1;
+    }
 
     initDiagnostics(&diagnostics);
 
@@ -72,7 +117,9 @@ int main(void) {
         return 1;
     }
 
-    printf("=== SOURCE START ===\n%s\n=== SOURCE END ===\n", source);
+    if (mode == MODE_DEBUG) {
+        printf("=== SOURCE START ===\n%s\n=== SOURCE END ===\n", source);
+    }
 
     if (!lexSource(source, &tokens, &diagnostics)) {
         printDiagnosticsSummary(&diagnostics);
@@ -82,21 +129,30 @@ int main(void) {
 
     normalizeTokens(&tokens);
 
-    printf("\n=== TOKENS ===\n");
-    printTokenArray(&tokens);
-
-    printf("\n=== AST ===\n");
-    root = parseTokens(&tokens);
-    if (root != NULL) {
-        printAst(root, 0);
-    } else {
-        printf("root is NULL\n");
+    if (mode == MODE_TOKENS || mode == MODE_DEBUG) {
+        printf("\n=== TOKENS ===\n");
+        printTokenArray(&tokens);
     }
 
-    printDiagnosticsSummary(&diagnostics);
+    root = parseTokens(&tokens);
 
-    if (root != NULL) {
-        printf("\n=== EXECUTION ===\n");
+    if (mode == MODE_AST || mode == MODE_DEBUG) {
+        printf("\n=== AST ===\n");
+        if (root != NULL) {
+            printAst(root, 0);
+        } else {
+            printf("root is NULL\n");
+        }
+    }
+
+    if (mode == MODE_DEBUG) {
+        printDiagnosticsSummary(&diagnostics);
+    }
+
+    if (root != NULL && mode != MODE_TOKENS && mode != MODE_AST) {
+        if (mode == MODE_DEBUG) {
+            printf("\n=== EXECUTION ===\n");
+        }
 
         runtimeInit(&runtime);
         execResult = runtimeExecuteNode(&runtime, root);

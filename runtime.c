@@ -1004,10 +1004,6 @@ static ExecResult executeAssign(Runtime* runtime, AstNode* node) {
             }
         }
 
-        printf("[assign] %s = ", name);
-        printValue(&rhs);
-        printf("\n");
-
         free(name);
         freeValue(&rhs);
         return execNormal();
@@ -1038,9 +1034,6 @@ static ExecResult executeAssign(Runtime* runtime, AstNode* node) {
 
         memberName = copyTokenText(target->as.memberExpr.member);
         if (memberName != NULL) {
-            printf("[assign] .%s = ", memberName);
-            printValue(&rhs);
-            printf("\n");
             free(memberName);
         }
 
