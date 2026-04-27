@@ -1117,6 +1117,8 @@ void runtimeInit(Runtime* runtime) {
     envInit(&runtime->globals, NULL);
     runtime->current = &runtime->globals;
     runtime->hadError = 0;
+    runtime->errorLine = 0;
+    runtime->errorColumn = 0;
     runtime->errorMessage[0] = '\0';
 
     registerBuiltins(&runtime->globals);
@@ -1129,6 +1131,28 @@ void runtimeFree(Runtime* runtime) {
 
 void runtimeError(Runtime* runtime, const char* message) {
     runtime->hadError = 1;
+    runtime->errorLine = 0;
+    runtime->errorColumn = 0;
+
+    if (message == NULL) {
+        runtime->errorMessage[0] = '\0';
+        return;
+    }
+
+    strncpy(runtime->errorMessage, message, sizeof(runtime->errorMessage) - 1);
+    runtime->errorMessage[sizeof(runtime->errorMessage) - 1] = '\0';
+}
+
+void runtimeErrorAt(Runtime* runtime, const AstNode* node, const char* message) {
+    runtime->hadError = 1;
+
+    if (node != NULL) {
+        runtime->errorLine = node->token.line;
+        runtime->errorColumn = node->token.column;
+    } else {
+        runtime->errorLine = 0;
+        runtime->errorColumn = 0;
+    }
 
     if (message == NULL) {
         runtime->errorMessage[0] = '\0';
@@ -1182,7 +1206,7 @@ Value runtimeEvalExpression(Runtime* runtime, AstNode* node) {
 
             if (!envGet(runtime->current, name, &valueOut)) {
                 free(name);
-                runtimeError(runtime, "Undefined variable.");
+                runtimeErrorAt(runtime, node, "Undefined variable.");
                 return makeNone();
             }
 
@@ -1292,7 +1316,7 @@ Value runtimeEvalExpression(Runtime* runtime, AstNode* node) {
         }
 
         default:
-            runtimeError(runtime, "Unsupported expression node.");
+            runtimeErrorAt(runtime, node, "Unsupported expression node.");
             return makeNone();
     }
 }
@@ -1476,7 +1500,7 @@ ExecResult runtimeExecuteNode(Runtime* runtime, AstNode* node) {
         }
 
         default:
-            runtimeError(runtime, "Unhandled AST node in runtime.");
+            runtimeErrorAt(runtime, node, "Unhandled AST node in runtime.");
             return execError();
     }
 }

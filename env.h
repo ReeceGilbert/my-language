@@ -18,11 +18,12 @@ typedef struct Environment {
 void envInit(Environment* env, Environment* parent);
 void envFree(Environment* env);
 
-Value* envGetRef(Environment* env, const char* name);
-
 int envDefine(Environment* env, const char* name, Value value);
 int envAssign(Environment* env, const char* name, Value value);
+
 int envGet(const Environment* env, const char* name, Value* outValue);
+Value* envGetRef(Environment* env, const char* name);
+
 int envExistsInCurrent(const Environment* env, const char* name);
 
 #endif

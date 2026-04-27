@@ -2,8 +2,8 @@
 #define RUNTIME_H
 
 #include "ast.h"
-#include "value.h"
 #include "env.h"
+#include "value.h"
 
 typedef enum {
     FLOW_NORMAL,
@@ -22,12 +22,16 @@ typedef struct Runtime {
     Environment globals;
     Environment* current;
     int hadError;
+    int errorLine;
+    int errorColumn;
     char errorMessage[256];
 } Runtime;
 
 void runtimeInit(Runtime* runtime);
 void runtimeFree(Runtime* runtime);
+
 void runtimeError(Runtime* runtime, const char* message);
+void runtimeErrorAt(Runtime* runtime, const AstNode* node, const char* message);
 
 ExecResult execNormal(void);
 ExecResult execError(void);

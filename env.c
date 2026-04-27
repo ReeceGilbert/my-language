@@ -3,21 +3,27 @@
 #include <stdlib.h>
 #include <string.h>
 
-static char* duplicateString(const char* s) {
-    size_t len;
+#define ENV_INITIAL_CAPACITY 8
+
+static char* duplicateString(const char* text);
+static int ensureCapacity(Environment* env);
+
+static char* duplicateString(const char* text) {
+    size_t length;
     char* copy;
 
-    if (s == NULL) {
+    if (text == NULL) {
         return NULL;
     }
 
-    len = strlen(s);
-    copy = (char*)malloc(len + 1);
+    length = strlen(text);
+    copy = (char*)malloc(length + 1);
+
     if (copy == NULL) {
         return NULL;
     }
 
-    memcpy(copy, s, len + 1);
+    memcpy(copy, text, length + 1);
     return copy;
 }
 
@@ -25,22 +31,35 @@ static int ensureCapacity(Environment* env) {
     Binding* newBindings;
     int newCapacity;
 
+    if (env == NULL) {
+        return 0;
+    }
+
     if (env->count < env->capacity) {
         return 1;
     }
 
-    newCapacity = (env->capacity < 8) ? 8 : env->capacity * 2;
-    newBindings = (Binding*)realloc(env->bindings, sizeof(Binding) * newCapacity);
+    newCapacity = (env->capacity < ENV_INITIAL_CAPACITY)
+        ? ENV_INITIAL_CAPACITY
+        : env->capacity * 2;
+
+    newBindings = (Binding*)realloc(env->bindings, sizeof(Binding) * (size_t)newCapacity);
+
     if (newBindings == NULL) {
         return 0;
     }
 
     env->bindings = newBindings;
     env->capacity = newCapacity;
+
     return 1;
 }
 
 void envInit(Environment* env, Environment* parent) {
+    if (env == NULL) {
+        return;
+    }
+
     env->parent = parent;
     env->bindings = NULL;
     env->count = 0;
@@ -57,29 +76,16 @@ void envFree(Environment* env) {
     for (i = 0; i < env->count; i++) {
         free(env->bindings[i].name);
         env->bindings[i].name = NULL;
+
         freeValue(&env->bindings[i].value);
     }
 
     free(env->bindings);
+
+    env->parent = NULL;
     env->bindings = NULL;
     env->count = 0;
     env->capacity = 0;
-}
-
-int envExistsInCurrent(const Environment* env, const char* name) {
-    int i;
-
-    if (env == NULL || name == NULL) {
-        return 0;
-    }
-
-    for (i = 0; i < env->count; i++) {
-        if (strcmp(env->bindings[i].name, name) == 0) {
-            return 1;
-        }
-    }
-
-    return 0;
 }
 
 int envDefine(Environment* env, const char* name, Value value) {
@@ -97,14 +103,16 @@ int envDefine(Environment* env, const char* name, Value value) {
         return 0;
     }
 
-    binding = &env->bindings[env->count++];
+    binding = &env->bindings[env->count];
+
     binding->name = duplicateString(name);
     if (binding->name == NULL) {
-        env->count--;
         return 0;
     }
 
     binding->value = copyValue(&value);
+    env->count++;
+
     return 1;
 }
 
@@ -169,4 +177,20 @@ Value* envGetRef(Environment* env, const char* name) {
     }
 
     return NULL;
+}
+
+int envExistsInCurrent(const Environment* env, const char* name) {
+    int i;
+
+    if (env == NULL || name == NULL) {
+        return 0;
+    }
+
+    for (i = 0; i < env->count; i++) {
+        if (strcmp(env->bindings[i].name, name) == 0) {
+            return 1;
+        }
+    }
+
+    return 0;
 }

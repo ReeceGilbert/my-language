@@ -4,21 +4,32 @@
 #include <stdlib.h>
 #include <string.h>
 
-static char* duplicateString(const char* s) {
-    size_t len;
+#define LIST_INITIAL_CAPACITY 8
+
+static char* duplicateString(const char* text);
+static int ensureListCapacity(ListObject* list);
+static void freeListObject(ListObject* list);
+
+// ------------------------------------------------------------
+// INTERNAL HELPERS
+// ------------------------------------------------------------
+
+static char* duplicateString(const char* text) {
+    size_t length;
     char* copy;
 
-    if (s == NULL) {
+    if (text == NULL) {
         return NULL;
     }
 
-    len = strlen(s);
-    copy = (char*)malloc(len + 1);
+    length = strlen(text);
+    copy = (char*)malloc(length + 1);
+
     if (copy == NULL) {
         return NULL;
     }
 
-    memcpy(copy, s, len + 1);
+    memcpy(copy, text, length + 1);
     return copy;
 }
 
@@ -34,8 +45,12 @@ static int ensureListCapacity(ListObject* list) {
         return 1;
     }
 
-    newCapacity = (list->capacity < 8) ? 8 : list->capacity * 2;
+    newCapacity = (list->capacity < LIST_INITIAL_CAPACITY)
+        ? LIST_INITIAL_CAPACITY
+        : list->capacity * 2;
+
     newItems = (Value*)realloc(list->items, sizeof(Value) * (size_t)newCapacity);
+
     if (newItems == NULL) {
         return 0;
     }
@@ -45,8 +60,28 @@ static int ensureListCapacity(ListObject* list) {
     return 1;
 }
 
+static void freeListObject(ListObject* list) {
+    int i;
+
+    if (list == NULL) {
+        return;
+    }
+
+    for (i = 0; i < list->count; i++) {
+        freeValue(&list->items[i]);
+    }
+
+    free(list->items);
+    free(list);
+}
+
+// ------------------------------------------------------------
+// LISTS
+// ------------------------------------------------------------
+
 ListObject* createListObject(void) {
     ListObject* list = (ListObject*)malloc(sizeof(ListObject));
+
     if (list == NULL) {
         return NULL;
     }
@@ -54,6 +89,7 @@ ListObject* createListObject(void) {
     list->items = NULL;
     list->count = 0;
     list->capacity = 0;
+
     return list;
 }
 
@@ -68,34 +104,47 @@ int listAppend(ListObject* list, Value value) {
 
     list->items[list->count] = copyValue(&value);
     list->count++;
+
     return 1;
 }
 
+// ------------------------------------------------------------
+// VALUE CONSTRUCTORS
+// ------------------------------------------------------------
+
 Value makeNone(void) {
-    Value v;
-    v.type = VAL_NONE;
-    return v;
+    Value value;
+
+    value.type = VAL_NONE;
+
+    return value;
 }
 
 Value makeBool(int boolean) {
-    Value v;
-    v.type = VAL_BOOL;
-    v.as.boolean = boolean ? 1 : 0;
-    return v;
+    Value value;
+
+    value.type = VAL_BOOL;
+    value.as.boolean = boolean ? 1 : 0;
+
+    return value;
 }
 
 Value makeNumber(double number) {
-    Value v;
-    v.type = VAL_NUMBER;
-    v.as.number = number;
-    return v;
+    Value value;
+
+    value.type = VAL_NUMBER;
+    value.as.number = number;
+
+    return value;
 }
 
 Value makeStringOwned(char* string) {
-    Value v;
-    v.type = VAL_STRING;
-    v.as.string = string;
-    return v;
+    Value value;
+
+    value.type = VAL_STRING;
+    value.as.string = string;
+
+    return value;
 }
 
 Value makeStringCopy(const char* string) {
@@ -103,50 +152,64 @@ Value makeStringCopy(const char* string) {
 }
 
 Value makeNativeFunction(NativeFunction* nativeFunction) {
-    Value v;
-    v.type = VAL_NATIVE_FUNCTION;
-    v.as.nativeFunction = nativeFunction;
-    return v;
+    Value value;
+
+    value.type = VAL_NATIVE_FUNCTION;
+    value.as.nativeFunction = nativeFunction;
+
+    return value;
 }
 
 Value makeFunction(FunctionObject* function) {
-    Value v;
-    v.type = VAL_FUNCTION;
-    v.as.function = function;
-    return v;
+    Value value;
+
+    value.type = VAL_FUNCTION;
+    value.as.function = function;
+
+    return value;
 }
 
 Value makeClass(ClassObject* classObject) {
-    Value v;
-    v.type = VAL_CLASS;
-    v.as.classObject = classObject;
-    return v;
+    Value value;
+
+    value.type = VAL_CLASS;
+    value.as.classObject = classObject;
+
+    return value;
 }
 
 Value makeInstance(InstanceObject* instance) {
-    Value v;
-    v.type = VAL_INSTANCE;
-    v.as.instance = instance;
-    return v;
+    Value value;
+
+    value.type = VAL_INSTANCE;
+    value.as.instance = instance;
+
+    return value;
 }
 
 Value makeBoundMethod(BoundMethodObject* boundMethod) {
-    Value v;
-    v.type = VAL_BOUND_METHOD;
-    v.as.boundMethod = boundMethod;
-    return v;
+    Value value;
+
+    value.type = VAL_BOUND_METHOD;
+    value.as.boundMethod = boundMethod;
+
+    return value;
 }
 
 Value makeList(ListObject* list) {
-    Value v;
-    v.type = VAL_LIST;
-    v.as.list = list;
-    return v;
+    Value value;
+
+    value.type = VAL_LIST;
+    value.as.list = list;
+
+    return value;
 }
 
-void freeValue(Value* value) {
-    int i;
+// ------------------------------------------------------------
+// VALUE LIFETIME
+// ------------------------------------------------------------
 
+void freeValue(Value* value) {
     if (value == NULL) {
         return;
     }
@@ -158,14 +221,8 @@ void freeValue(Value* value) {
             break;
 
         case VAL_LIST:
-            if (value->as.list != NULL) {
-                for (i = 0; i < value->as.list->count; i++) {
-                    freeValue(&value->as.list->items[i]);
-                }
-                free(value->as.list->items);
-                free(value->as.list);
-                value->as.list = NULL;
-            }
+            freeListObject(value->as.list);
+            value->as.list = NULL;
             break;
 
         default:
@@ -209,38 +266,38 @@ Value copyValue(const Value* value) {
             return makeBoundMethod(value->as.boundMethod);
 
         case VAL_LIST: {
-            ListObject* src = value->as.list;
-            ListObject* dst;
+            ListObject* source = value->as.list;
+            ListObject* copy;
             int i;
 
-            if (src == NULL) {
+            if (source == NULL) {
                 return makeList(NULL);
             }
 
-            dst = createListObject();
-            if (dst == NULL) {
+            copy = createListObject();
+
+            if (copy == NULL) {
                 return makeNone();
             }
 
-            for (i = 0; i < src->count; i++) {
-                if (!listAppend(dst, src->items[i])) {
-                    int j;
-                    for (j = 0; j < dst->count; j++) {
-                        freeValue(&dst->items[j]);
-                    }
-                    free(dst->items);
-                    free(dst);
+            for (i = 0; i < source->count; i++) {
+                if (!listAppend(copy, source->items[i])) {
+                    freeListObject(copy);
                     return makeNone();
                 }
             }
 
-            return makeList(dst);
+            return makeList(copy);
         }
 
         default:
             return makeNone();
     }
 }
+
+// ------------------------------------------------------------
+// VALUE BEHAVIOR
+// ------------------------------------------------------------
 
 int valueIsTruthy(const Value* value) {
     if (value == NULL) {
@@ -260,15 +317,15 @@ int valueIsTruthy(const Value* value) {
         case VAL_STRING:
             return value->as.string != NULL && value->as.string[0] != '\0';
 
+        case VAL_LIST:
+            return value->as.list != NULL && value->as.list->count > 0;
+
         case VAL_NATIVE_FUNCTION:
         case VAL_FUNCTION:
         case VAL_CLASS:
         case VAL_INSTANCE:
         case VAL_BOUND_METHOD:
             return 1;
-
-        case VAL_LIST:
-            return value->as.list != NULL && value->as.list->count > 0;
 
         default:
             return 0;
@@ -298,6 +355,7 @@ int valueEquals(const Value* a, const Value* b) {
             if (a->as.string == NULL || b->as.string == NULL) {
                 return a->as.string == b->as.string;
             }
+
             return strcmp(a->as.string, b->as.string) == 0;
 
         case VAL_NATIVE_FUNCTION:
@@ -390,7 +448,8 @@ void printValue(const Value* value) {
             break;
 
         case VAL_NATIVE_FUNCTION:
-            if (value->as.nativeFunction != NULL && value->as.nativeFunction->name != NULL) {
+            if (value->as.nativeFunction != NULL &&
+                value->as.nativeFunction->name != NULL) {
                 printf("<native fn %s>", value->as.nativeFunction->name);
             } else {
                 printf("<native fn>");
@@ -398,7 +457,8 @@ void printValue(const Value* value) {
             break;
 
         case VAL_FUNCTION:
-            if (value->as.function != NULL && value->as.function->name != NULL) {
+            if (value->as.function != NULL &&
+                value->as.function->name != NULL) {
                 printf("<fn %s>", value->as.function->name);
             } else {
                 printf("<fn>");
@@ -406,7 +466,8 @@ void printValue(const Value* value) {
             break;
 
         case VAL_CLASS:
-            if (value->as.classObject != NULL && value->as.classObject->name != NULL) {
+            if (value->as.classObject != NULL &&
+                value->as.classObject->name != NULL) {
                 printf("<class %s>", value->as.classObject->name);
             } else {
                 printf("<class>");
@@ -440,12 +501,15 @@ void printValue(const Value* value) {
             }
 
             printf("[");
+
             for (i = 0; i < value->as.list->count; i++) {
                 if (i > 0) {
                     printf(", ");
                 }
+
                 printValue(&value->as.list->items[i]);
             }
+
             printf("]");
             break;
 

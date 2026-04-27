@@ -9,13 +9,29 @@ typedef struct Runtime Runtime;
 
 typedef struct Value Value;
 typedef struct NativeFunction NativeFunction;
+
 typedef struct FunctionObject FunctionObject;
 typedef struct MethodEntry MethodEntry;
 typedef struct ClassObject ClassObject;
+
 typedef struct InstanceField InstanceField;
 typedef struct InstanceObject InstanceObject;
 typedef struct BoundMethodObject BoundMethodObject;
+
 typedef struct ListObject ListObject;
+
+typedef enum {
+    VAL_NONE,
+    VAL_BOOL,
+    VAL_NUMBER,
+    VAL_STRING,
+    VAL_NATIVE_FUNCTION,
+    VAL_FUNCTION,
+    VAL_CLASS,
+    VAL_INSTANCE,
+    VAL_BOUND_METHOD,
+    VAL_LIST
+} ValueType;
 
 struct FunctionObject {
     char* name;
@@ -39,18 +55,10 @@ struct ClassObject {
     int methodCapacity;
 };
 
-typedef enum {
-    VAL_NONE,
-    VAL_BOOL,
-    VAL_NUMBER,
-    VAL_STRING,
-    VAL_NATIVE_FUNCTION,
-    VAL_FUNCTION,
-    VAL_CLASS,
-    VAL_INSTANCE,
-    VAL_BOUND_METHOD,
-    VAL_LIST
-} ValueType;
+struct BoundMethodObject {
+    InstanceObject* receiver;
+    FunctionObject* method;
+};
 
 struct ListObject {
     Value* items;
@@ -60,6 +68,7 @@ struct ListObject {
 
 struct Value {
     ValueType type;
+
     union {
         int boolean;
         double number;
@@ -91,14 +100,10 @@ struct InstanceObject {
     int fieldCapacity;
 };
 
-struct BoundMethodObject {
-    InstanceObject* receiver;
-    FunctionObject* method;
-};
-
 Value makeNone(void);
 Value makeBool(int boolean);
 Value makeNumber(double number);
+
 Value makeStringOwned(char* string);
 Value makeStringCopy(const char* string);
 
@@ -107,8 +112,8 @@ Value makeFunction(FunctionObject* function);
 Value makeClass(ClassObject* classObject);
 Value makeInstance(InstanceObject* instance);
 Value makeBoundMethod(BoundMethodObject* boundMethod);
-Value makeList(ListObject* list);
 
+Value makeList(ListObject* list);
 ListObject* createListObject(void);
 int listAppend(ListObject* list, Value value);
 

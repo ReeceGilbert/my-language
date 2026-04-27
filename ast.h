@@ -144,9 +144,11 @@ struct AstNode {
 
 void initAstNodeArray(AstNodeArray* array);
 void pushAstNode(AstNodeArray* array, AstNode* node);
+void freeAstNodeArray(AstNodeArray* array);
 
 void initTokenList(TokenList* list);
 void pushTokenList(TokenList* list, Token token);
+void freeTokenList(TokenList* list);
 
 AstNode* newAstNode(AstNodeType type, Token token);
 
@@ -156,9 +158,6 @@ AstNode* makeIdentifierNode(Token name);
 AstNode* makeLiteralNode(Token literal);
 
 void printAst(const AstNode* node, int depth);
-
 void freeAst(AstNode* node);
-void freeAstNodeArray(AstNodeArray* array);
-void freeTokenList(TokenList* list);
 
 #endif

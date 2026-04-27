@@ -3,59 +3,11 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "token.h"
-#include "parser.h"
-#include "lexer.h"
-#include "runtime.h"
 #include "ast.h"
-
-static char* readEntireFile(const char* path) {
-    FILE* file = fopen(path, "rb");
-    long fileSize;
-    char* buffer;
-    size_t bytesRead;
-
-    if (file == NULL) {
-        fprintf(stderr, "Failed to open %s\n", path);
-        return NULL;
-    }
-
-    if (fseek(file, 0, SEEK_END) != 0) {
-        fclose(file);
-        fprintf(stderr, "Failed to seek to end of %s\n", path);
-        return NULL;
-    }
-
-    fileSize = ftell(file);
-    if (fileSize < 0) {
-        fclose(file);
-        fprintf(stderr, "Failed to determine size of %s\n", path);
-        return NULL;
-    }
-
-    rewind(file);
-
-    buffer = (char*)malloc((size_t)fileSize + 1);
-    if (buffer == NULL) {
-        fclose(file);
-        fprintf(stderr, "Out of memory while reading %s\n", path);
-        return NULL;
-    }
-
-    bytesRead = fread(buffer, 1, (size_t)fileSize, file);
-    fclose(file);
-
-    if (bytesRead != (size_t)fileSize) {
-        free(buffer);
-        fprintf(stderr,
-                "Failed to read entire file. Read %zu of %ld bytes.\n",
-                bytesRead, fileSize);
-        return NULL;
-    }
-
-    buffer[fileSize] = '\0';
-    return buffer;
-}
+#include "lexer.h"
+#include "parser.h"
+#include "runtime.h"
+#include "token.h"
 
 typedef enum {
     MODE_RUN,
@@ -73,39 +25,105 @@ static void printUsage(void) {
             "  nearoh --debug <file.nr>\n");
 }
 
-int main(int argc, char** argv) {
-    const char* inputPath;
-    RunMode mode = MODE_RUN;
+static int parseArguments(int argc, char** argv, RunMode* mode, const char** inputPath) {
+    *mode = MODE_RUN;
+    *inputPath = NULL;
 
-    char* source;
-    TokenArray tokens;
-    Diagnostics diagnostics;
-    AstNode* root;
-    Runtime runtime;
-    ExecResult execResult;
-
-    if (argc < 2) {
-        printUsage();
+    if (argc == 2) {
+        *inputPath = argv[1];
         return 1;
     }
 
-    if (argc == 2) {
-        inputPath = argv[1];
-    } else if (argc == 3) {
-        inputPath = argv[2];
+    if (argc == 3) {
+        *inputPath = argv[2];
 
         if (strcmp(argv[1], "--tokens") == 0) {
-            mode = MODE_TOKENS;
-        } else if (strcmp(argv[1], "--ast") == 0) {
-            mode = MODE_AST;
-        } else if (strcmp(argv[1], "--debug") == 0) {
-            mode = MODE_DEBUG;
-        } else {
-            fprintf(stderr, "Unknown option: %s\n", argv[1]);
-            printUsage();
+            *mode = MODE_TOKENS;
             return 1;
         }
-    } else {
+
+        if (strcmp(argv[1], "--ast") == 0) {
+            *mode = MODE_AST;
+            return 1;
+        }
+
+        if (strcmp(argv[1], "--debug") == 0) {
+            *mode = MODE_DEBUG;
+            return 1;
+        }
+
+        fprintf(stderr, "Unknown option: %s\n", argv[1]);
+        return 0;
+    }
+
+    return 0;
+}
+
+static char* readEntireFile(const char* path) {
+    FILE* file = fopen(path, "rb");
+    long fileSize;
+    char* buffer;
+    size_t bytesRead;
+
+    if (file == NULL) {
+        fprintf(stderr, "Failed to open %s\n", path);
+        return NULL;
+    }
+
+    if (fseek(file, 0, SEEK_END) != 0) {
+        fprintf(stderr, "Failed to seek to end of %s\n", path);
+        fclose(file);
+        return NULL;
+    }
+
+    fileSize = ftell(file);
+    if (fileSize < 0) {
+        fprintf(stderr, "Failed to determine size of %s\n", path);
+        fclose(file);
+        return NULL;
+    }
+
+    rewind(file);
+
+    buffer = (char*)malloc((size_t)fileSize + 1);
+    if (buffer == NULL) {
+        fprintf(stderr, "Out of memory while reading %s\n", path);
+        fclose(file);
+        return NULL;
+    }
+
+    bytesRead = fread(buffer, 1, (size_t)fileSize, file);
+    fclose(file);
+
+    if (bytesRead != (size_t)fileSize) {
+        fprintf(stderr,
+                "Failed to read entire file. Read %zu of %ld bytes.\n",
+                bytesRead,
+                fileSize);
+        free(buffer);
+        return NULL;
+    }
+
+    buffer[fileSize] = '\0';
+    return buffer;
+}
+
+int main(int argc, char** argv) {
+    const char* inputPath = NULL;
+    RunMode mode = MODE_RUN;
+
+    char* source = NULL;
+    TokenArray tokens;
+    Diagnostics diagnostics;
+    AstNode* root = NULL;
+    Runtime runtime;
+    ExecResult execResult;
+
+    int tokensInitialized = 0;
+    int runtimeInitialized = 0;
+    int exitCode = 0;
+
+    if (!parseArguments(argc, argv, &mode, &inputPath)) {
         printUsage();
         return 1;
     }
@@ -123,10 +141,11 @@ int main(int argc, char** argv) {
 
     if (!lexSource(source, &tokens, &diagnostics)) {
         printDiagnosticsSummary(&diagnostics);
-        free(source);
-        return 1;
+        exitCode = 1;
+        goto cleanup;
     }
 
+    tokensInitialized = 1;
     normalizeTokens(&tokens);
 
     if (mode == MODE_TOKENS || mode == MODE_DEBUG) {
@@ -134,39 +153,63 @@ int main(int argc, char** argv) {
         printTokenArray(&tokens);
     }
 
+    if (mode == MODE_TOKENS) {
+        goto cleanup;
+    }
+
     root = parseTokens(&tokens);
+
+    if (root == NULL) {
+        fprintf(stderr, "Parse failed: AST root is NULL.\n");
+        exitCode = 1;
+        goto cleanup;
+    }
 
     if (mode == MODE_AST || mode == MODE_DEBUG) {
         printf("\n=== AST ===\n");
-        if (root != NULL) {
-            printAst(root, 0);
-        } else {
-            printf("root is NULL\n");
-        }
+        printAst(root, 0);
+    }
+
+    if (mode == MODE_AST) {
+        goto cleanup;
     }
 
     if (mode == MODE_DEBUG) {
         printDiagnosticsSummary(&diagnostics);
+        printf("\n=== EXECUTION ===\n");
     }
 
-    if (root != NULL && mode != MODE_TOKENS && mode != MODE_AST) {
-        if (mode == MODE_DEBUG) {
-            printf("\n=== EXECUTION ===\n");
-        }
+    runtimeInit(&runtime);
+    runtimeInitialized = 1;
 
-        runtimeInit(&runtime);
-        execResult = runtimeExecuteNode(&runtime, root);
+    execResult = runtimeExecuteNode(&runtime, root);
 
-        if (runtime.hadError) {
+    if (runtime.hadError) {
+        if (runtime.errorLine > 0) {
+            fprintf(stderr,
+                    "Runtime error at line %d col %d: %s\n",
+                    runtime.errorLine,
+                    runtime.errorColumn,
+                    runtime.errorMessage);
+        } else {
             fprintf(stderr, "Runtime error: %s\n", runtime.errorMessage);
         }
+        exitCode = 1;
+    }
 
-        freeValue(&execResult.value);
+    freeValue(&execResult.value);
+
+cleanup:
+    if (runtimeInitialized) {
         runtimeFree(&runtime);
     }
 
     freeAst(root);
-    freeTokenArray(&tokens);
+
+    if (tokensInitialized) {
+        freeTokenArray(&tokens);
+    }
+
     free(source);
-    return 0;
+    return exitCode;
 }
