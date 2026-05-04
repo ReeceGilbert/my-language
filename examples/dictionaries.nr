@@ -8,3 +8,4 @@ print(person["age"])
 
 person["age"] = 22
 print(person["age"])
+print(len(person))

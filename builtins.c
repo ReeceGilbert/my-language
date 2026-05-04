@@ -35,6 +35,13 @@ static Value builtinLen(Runtime* runtime, int argCount, Value* args) {
 
             return makeNumber((double)args[0].as.list->count);
 
+        case VAL_DICT:
+            if (args[0].as.dict == NULL) {
+                return makeNumber(0);
+            }
+
+            return makeNumber((double)args[0].as.dict->count);
+
         case VAL_STRING:
             if (args[0].as.string == NULL) {
                 return makeNumber(0);
