@@ -18,6 +18,14 @@ typedef struct {
     Value value;
 } ExecResult;
 
+/*
+    ImportedModule stays private in runtime.c.
+
+    Runtime only stores an opaque pointer array here so runtime.h does not
+    need to know about TokenArray, Diagnostics, lexer.h, or parser.h.
+*/
+typedef struct ImportedModule ImportedModule;
+
 typedef struct Runtime {
     Environment globals;
     Environment* current;
@@ -25,10 +33,20 @@ typedef struct Runtime {
     int errorLine;
     int errorColumn;
     char errorMessage[256];
+
+    ImportedModule* imports;
+    int importCount;
+    int importCapacity;
+
+    char** fileStack;
+    int fileStackCount;
+    int fileStackCapacity;
 } Runtime;
 
 void runtimeInit(Runtime* runtime);
 void runtimeFree(Runtime* runtime);
+
+int runtimeSetEntryPath(Runtime* runtime, const char* path);
 
 void runtimeError(Runtime* runtime, const char* message);
 void runtimeErrorAt(Runtime* runtime, const AstNode* node, const char* message);

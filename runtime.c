@@ -8,6 +8,17 @@
 #include <stdlib.h>
 #include <string.h>
 
+struct ImportedModule {
+    char* path;
+    int loaded;
+    int loading;
+
+    char* source;
+    TokenArray* tokens;
+    Diagnostics* diagnostics;
+    AstNode* ast;
+};
+
 static char* copyTokenText(Token token) {
     char* text = (char*)malloc((size_t)token.length + 1);
     if (text == NULL) {
@@ -53,6 +64,62 @@ static char* copyImportPath(Token token) {
     return text;
 }
 
+static char* normalizeImportPath(const char* path) {
+    char* normalized;
+    int i;
+    int out;
+    int length;
+    int lastWasSlash;
+
+    if (path == NULL) {
+        return NULL;
+    }
+
+    length = (int)strlen(path);
+    normalized = (char*)malloc((size_t)length + 1);
+
+    if (normalized == NULL) {
+        return NULL;
+    }
+
+    i = 0;
+    out = 0;
+    lastWasSlash = 0;
+
+    /*
+        Strip leading "./" segments.
+
+        "./examples/file.nr" -> "examples/file.nr"
+        "././examples/file.nr" -> "examples/file.nr"
+    */
+    while (path[i] == '.' && (path[i + 1] == '/' || path[i + 1] == '\\')) {
+        i += 2;
+    }
+
+    while (path[i] != '\0') {
+        char c = path[i];
+
+        if (c == '\\') {
+            c = '/';
+        }
+
+        if (c == '/') {
+            if (!lastWasSlash) {
+                normalized[out++] = c;
+                lastWasSlash = 1;
+            }
+        } else {
+            normalized[out++] = c;
+            lastWasSlash = 0;
+        }
+
+        i++;
+    }
+
+    normalized[out] = '\0';
+    return normalized;
+}
+
 static char* readSourceFile(const char* path) {
     FILE* file;
     long size;
@@ -96,6 +163,343 @@ static char* readSourceFile(const char* path) {
 
     buffer[size] = '\0';
     return buffer;
+}
+
+static ImportedModule* findImportedModule(Runtime* runtime, const char* path) {
+    int i;
+
+    if (runtime == NULL || path == NULL) {
+        return NULL;
+    }
+
+    for (i = 0; i < runtime->importCount; i++) {
+        if (runtime->imports[i].path != NULL &&
+            strcmp(runtime->imports[i].path, path) == 0) {
+            return &runtime->imports[i];
+        }
+    }
+
+    return NULL;
+}
+
+static int ensureImportCapacity(Runtime* runtime) {
+    ImportedModule* newImports;
+    int newCapacity;
+
+    if (runtime == NULL) {
+        return 0;
+    }
+
+    if (runtime->importCount < runtime->importCapacity) {
+        return 1;
+    }
+
+    newCapacity = (runtime->importCapacity < 8)
+        ? 8
+        : runtime->importCapacity * 2;
+
+    newImports = (ImportedModule*)realloc(
+        runtime->imports,
+        sizeof(ImportedModule) * (size_t)newCapacity
+    );
+
+    if (newImports == NULL) {
+        return 0;
+    }
+
+    runtime->imports = newImports;
+    runtime->importCapacity = newCapacity;
+    return 1;
+}
+
+static ImportedModule* addImportedModule(Runtime* runtime, const char* path) {
+    ImportedModule* module;
+    char* pathCopy;
+
+    if (runtime == NULL || path == NULL) {
+        return NULL;
+    }
+
+    if (!ensureImportCapacity(runtime)) {
+        return NULL;
+    }
+
+    pathCopy = (char*)malloc(strlen(path) + 1);
+    if (pathCopy == NULL) {
+        return NULL;
+    }
+
+    strcpy(pathCopy, path);
+
+    module = &runtime->imports[runtime->importCount];
+
+    module->path = pathCopy;
+    module->loaded = 0;
+    module->loading = 0;
+    module->source = NULL;
+    module->tokens = NULL;
+    module->diagnostics = NULL;
+    module->ast = NULL;
+
+    runtime->importCount++;
+    return module;
+}
+
+static void freeImportedModules(Runtime* runtime) {
+    int i;
+
+    if (runtime == NULL) {
+        return;
+    }
+
+    for (i = 0; i < runtime->importCount; i++) {
+        ImportedModule* module = &runtime->imports[i];
+
+        free(module->path);
+
+        if (module->tokens != NULL) {
+            freeTokenArray(module->tokens);
+            free(module->tokens);
+        }
+
+        /*
+            AstNode trees are intentionally not freed yet because Nearoh does
+            not currently expose a known AST-freeing API here, and imported
+            functions/classes may have referenced imported AST nodes while the
+            runtime was alive.
+
+            This keeps the current safe behavior, but moves source/tokens into
+            Runtime ownership instead of leaking them immediately.
+        */
+
+        free(module->source);
+        free(module->diagnostics);
+    }
+
+    free(runtime->imports);
+    runtime->imports = NULL;
+    runtime->importCount = 0;
+    runtime->importCapacity = 0;
+}
+
+static int ensureFileStackCapacity(Runtime* runtime) {
+    char** newStack;
+    int newCapacity;
+
+    if (runtime == NULL) {
+        return 0;
+    }
+
+    if (runtime->fileStackCount < runtime->fileStackCapacity) {
+        return 1;
+    }
+
+    newCapacity = (runtime->fileStackCapacity < 8)
+        ? 8
+        : runtime->fileStackCapacity * 2;
+
+    newStack = (char**)realloc(
+        runtime->fileStack,
+        sizeof(char*) * (size_t)newCapacity
+    );
+
+    if (newStack == NULL) {
+        return 0;
+    }
+
+    runtime->fileStack = newStack;
+    runtime->fileStackCapacity = newCapacity;
+    return 1;
+}
+
+static char* copyCString(const char* text) {
+    char* copy;
+
+    if (text == NULL) {
+        return NULL;
+    }
+
+    copy = (char*)malloc(strlen(text) + 1);
+    if (copy == NULL) {
+        return NULL;
+    }
+
+    strcpy(copy, text);
+    return copy;
+}
+
+static int pushCurrentFile(Runtime* runtime, const char* path) {
+    char* pathCopy;
+
+    if (runtime == NULL || path == NULL) {
+        return 0;
+    }
+
+    if (!ensureFileStackCapacity(runtime)) {
+        return 0;
+    }
+
+    pathCopy = copyCString(path);
+    if (pathCopy == NULL) {
+        return 0;
+    }
+
+    runtime->fileStack[runtime->fileStackCount] = pathCopy;
+    runtime->fileStackCount++;
+    return 1;
+}
+
+static void popCurrentFile(Runtime* runtime) {
+    if (runtime == NULL || runtime->fileStackCount <= 0) {
+        return;
+    }
+
+    runtime->fileStackCount--;
+    free(runtime->fileStack[runtime->fileStackCount]);
+    runtime->fileStack[runtime->fileStackCount] = NULL;
+}
+
+static const char* getCurrentFile(Runtime* runtime) {
+    if (runtime == NULL || runtime->fileStackCount <= 0) {
+        return NULL;
+    }
+
+    return runtime->fileStack[runtime->fileStackCount - 1];
+}
+
+static void freeFileStack(Runtime* runtime) {
+    int i;
+
+    if (runtime == NULL) {
+        return;
+    }
+
+    for (i = 0; i < runtime->fileStackCount; i++) {
+        free(runtime->fileStack[i]);
+    }
+
+    free(runtime->fileStack);
+    runtime->fileStack = NULL;
+    runtime->fileStackCount = 0;
+    runtime->fileStackCapacity = 0;
+}
+
+static int isAbsolutePath(const char* path) {
+    if (path == NULL || path[0] == '\0') {
+        return 0;
+    }
+
+    if (path[0] == '/' || path[0] == '\\') {
+        return 1;
+    }
+
+    if (((path[0] >= 'A' && path[0] <= 'Z') ||
+         (path[0] >= 'a' && path[0] <= 'z')) &&
+        path[1] == ':') {
+        return 1;
+    }
+
+    return 0;
+}
+
+static char* getDirectoryName(const char* path) {
+    int length;
+    int i;
+    char* directory;
+
+    if (path == NULL) {
+        return NULL;
+    }
+
+    length = (int)strlen(path);
+
+    for (i = length - 1; i >= 0; i--) {
+        if (path[i] == '/' || path[i] == '\\') {
+            directory = (char*)malloc((size_t)i + 1);
+            if (directory == NULL) {
+                return NULL;
+            }
+
+            memcpy(directory, path, (size_t)i);
+            directory[i] = '\0';
+            return directory;
+        }
+    }
+
+    return copyCString("");
+}
+
+static char* joinPaths(const char* baseDir, const char* childPath) {
+    size_t baseLen;
+    size_t childLen;
+    int needsSlash;
+    char* joined;
+
+    if (childPath == NULL) {
+        return NULL;
+    }
+
+    if (baseDir == NULL || baseDir[0] == '\0') {
+        return copyCString(childPath);
+    }
+
+    baseLen = strlen(baseDir);
+    childLen = strlen(childPath);
+    needsSlash = baseLen > 0 &&
+                 baseDir[baseLen - 1] != '/' &&
+                 baseDir[baseLen - 1] != '\\';
+
+    joined = (char*)malloc(baseLen + childLen + (needsSlash ? 2 : 1));
+    if (joined == NULL) {
+        return NULL;
+    }
+
+    strcpy(joined, baseDir);
+
+    if (needsSlash) {
+        joined[baseLen] = '/';
+        joined[baseLen + 1] = '\0';
+    }
+
+    strcat(joined, childPath);
+    return joined;
+}
+
+static char* resolveImportPath(Runtime* runtime, const char* importPath) {
+    const char* currentFile;
+    char* currentDir;
+    char* joined;
+    char* normalized;
+
+    if (importPath == NULL) {
+        return NULL;
+    }
+
+    if (isAbsolutePath(importPath)) {
+        return normalizeImportPath(importPath);
+    }
+
+    currentFile = getCurrentFile(runtime);
+    if (currentFile == NULL) {
+        return normalizeImportPath(importPath);
+    }
+
+    currentDir = getDirectoryName(currentFile);
+    if (currentDir == NULL) {
+        return NULL;
+    }
+
+    joined = joinPaths(currentDir, importPath);
+    free(currentDir);
+
+    if (joined == NULL) {
+        return NULL;
+    }
+
+    normalized = normalizeImportPath(joined);
+    free(joined);
+
+    return normalized;
 }
 
 static int assignLoopVariable(Runtime* runtime, Token nameToken, Value value) {
@@ -1398,11 +1802,11 @@ static ExecResult executeAssign(Runtime* runtime, AstNode* node) {
 }
 
 static ExecResult executeImportStatement(Runtime* runtime, AstNode* node) {
+    char* rawPath;
     char* path;
+    char* fallbackPath;
     char* source;
-    TokenArray* tokens;
-    Diagnostics* diagnostics;
-    AstNode* importedAst;
+    ImportedModule* module;
     ExecResult result;
 
     if (node == NULL || node->type != AST_IMPORT_STMT) {
@@ -1410,71 +1814,161 @@ static ExecResult executeImportStatement(Runtime* runtime, AstNode* node) {
         return execError();
     }
 
-    path = copyImportPath(node->as.importStmt.path);
-    if (path == NULL) {
+    rawPath = copyImportPath(node->as.importStmt.path);
+    if (rawPath == NULL) {
         runtimeErrorAt(runtime, node, "Import path must be a string.");
         return execError();
     }
 
+    path = resolveImportPath(runtime, rawPath);
+    if (path == NULL) {
+        free(rawPath);
+        runtimeError(runtime, "Out of memory while resolving import path.");
+        return execError();
+    }
+
+    module = findImportedModule(runtime, path);
+
+    if (module != NULL && module->loaded) {
+        free(rawPath);
+        free(path);
+        return execNormal();
+    }
+
+    if (module != NULL && module->loading) {
+        free(rawPath);
+        free(path);
+        runtimeErrorAt(runtime, node, "Circular import detected.");
+        return execError();
+    }
+
     source = readSourceFile(path);
+
+    /*
+        Compatibility fallback:
+
+        New behavior:
+            examples/modules/main.nr
+            import "utils.nr"
+            -> examples/modules/utils.nr
+
+        Old examples sometimes already include "examples/...":
+            examples/import_once_main.nr
+            import "examples/import_once_helper.nr"
+            -> first tries examples/examples/import_once_helper.nr
+            -> fallback tries examples/import_once_helper.nr
+    */
+    if (source == NULL && !isAbsolutePath(rawPath)) {
+        fallbackPath = normalizeImportPath(rawPath);
+
+        if (fallbackPath == NULL) {
+            free(rawPath);
+            free(path);
+            runtimeError(runtime, "Out of memory while resolving fallback import path.");
+            return execError();
+        }
+
+        if (strcmp(fallbackPath, path) != 0) {
+            ImportedModule* fallbackModule;
+
+            fallbackModule = findImportedModule(runtime, fallbackPath);
+
+            if (fallbackModule != NULL && fallbackModule->loaded) {
+                free(rawPath);
+                free(path);
+                free(fallbackPath);
+                return execNormal();
+            }
+
+            if (fallbackModule != NULL && fallbackModule->loading) {
+                free(rawPath);
+                free(path);
+                free(fallbackPath);
+                runtimeErrorAt(runtime, node, "Circular import detected.");
+                return execError();
+            }
+
+            source = readSourceFile(fallbackPath);
+
+            if (source != NULL) {
+                free(path);
+                path = fallbackPath;
+                module = fallbackModule;
+            } else {
+                free(fallbackPath);
+            }
+        } else {
+            free(fallbackPath);
+        }
+    }
+
+    free(rawPath);
+
     if (source == NULL) {
         free(path);
         runtimeErrorAt(runtime, node, "Could not read imported file.");
         return execError();
     }
 
-    tokens = (TokenArray*)malloc(sizeof(TokenArray));
-    diagnostics = (Diagnostics*)malloc(sizeof(Diagnostics));
+    if (module == NULL) {
+        module = addImportedModule(runtime, path);
+        if (module == NULL) {
+            free(source);
+            free(path);
+            runtimeError(runtime, "Out of memory while tracking imported file.");
+            return execError();
+        }
+    }
 
-    if (tokens == NULL || diagnostics == NULL) {
+    module->loading = 1;
+    module->source = source;
+
+    module->tokens = (TokenArray*)malloc(sizeof(TokenArray));
+    module->diagnostics = (Diagnostics*)malloc(sizeof(Diagnostics));
+
+    if (module->tokens == NULL || module->diagnostics == NULL) {
+        module->loading = 0;
         free(path);
-        free(source);
-        free(tokens);
-        free(diagnostics);
         runtimeError(runtime, "Out of memory while importing file.");
         return execError();
     }
 
-    initDiagnostics(diagnostics);
+    initDiagnostics(module->diagnostics);
 
-    if (!lexSource(source, tokens, diagnostics)) {
+    if (!lexSource(module->source, module->tokens, module->diagnostics)) {
+        module->loading = 0;
         free(path);
-        free(source);
-        freeTokenArray(tokens);
-        free(tokens);
-        free(diagnostics);
         runtimeErrorAt(runtime, node, "Failed to lex imported file.");
         return execError();
     }
 
-    importedAst = parseTokens(tokens);
-    if (importedAst == NULL) {
+    module->ast = parseTokens(module->tokens);
+    if (module->ast == NULL) {
+        module->loading = 0;
         free(path);
-        free(source);
-        freeTokenArray(tokens);
-        free(tokens);
-        free(diagnostics);
         runtimeErrorAt(runtime, node, "Failed to parse imported file.");
         return execError();
     }
 
-    result = runtimeExecuteNode(runtime, importedAst);
+    if (!pushCurrentFile(runtime, path)) {
+        module->loading = 0;
+        free(path);
+        runtimeError(runtime, "Out of memory while entering imported file.");
+        return execError();
+    }
 
-    /*
-        IMPORTANT:
-        Do not free source/tokens/importedAst yet.
+    result = runtimeExecuteNode(runtime, module->ast);
 
-        Current FunctionObject stores pointers into AST bodies and tokens.
-        If an imported file defines a function/class and we free its AST/source,
-        later calls can point at freed memory.
+    popCurrentFile(runtime);
 
-        This is a temporary safe leak for v0 import support.
-        Later, Runtime should own imported modules and free them in runtimeFree().
-    */
+    if (result.type == FLOW_NORMAL) {
+        module->loaded = 1;
+        module->loading = 0;
+    } else {
+        module->loading = 0;
+    }
 
     free(path);
-    free(diagnostics);
-
     return result;
 }
 
@@ -1486,11 +1980,42 @@ void runtimeInit(Runtime* runtime) {
     runtime->errorColumn = 0;
     runtime->errorMessage[0] = '\0';
 
+    runtime->imports = NULL;
+    runtime->importCount = 0;
+    runtime->importCapacity = 0;
+
+    runtime->fileStack = NULL;
+    runtime->fileStackCount = 0;
+    runtime->fileStackCapacity = 0;
+
     registerBuiltins(&runtime->globals);
+}
+
+int runtimeSetEntryPath(Runtime* runtime, const char* path) {
+    char* normalized;
+
+    if (runtime == NULL || path == NULL) {
+        return 0;
+    }
+
+    normalized = normalizeImportPath(path);
+    if (normalized == NULL) {
+        return 0;
+    }
+
+    if (!pushCurrentFile(runtime, normalized)) {
+        free(normalized);
+        return 0;
+    }
+
+    free(normalized);
+    return 1;
 }
 
 void runtimeFree(Runtime* runtime) {
     envFree(&runtime->globals);
+    freeImportedModules(runtime);
+    freeFileStack(runtime);
     runtime->current = NULL;
 }
 

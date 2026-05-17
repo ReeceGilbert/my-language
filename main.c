@@ -182,6 +182,12 @@ int main(int argc, char** argv) {
     runtimeInit(&runtime);
     runtimeInitialized = 1;
 
+    if (!runtimeSetEntryPath(&runtime, inputPath)) {
+        fprintf(stderr, "Runtime error: failed to set entry file path.\n");
+        exitCode = 1;
+        goto cleanup;
+    }
+
     execResult = runtimeExecuteNode(&runtime, root);
 
     if (runtime.hadError) {

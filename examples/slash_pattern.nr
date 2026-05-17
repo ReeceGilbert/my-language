@@ -2,8 +2,8 @@ print("=== Slash Pattern Generator ===")
 
 seed = 37
 
-rows = 25
-width = 60
+rows = 100
+width = 100
 
 row = 0
 
