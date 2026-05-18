@@ -12,7 +12,9 @@ $passTests = @(
     "examples/modules/main.nr",
     "examples/modules/main_nested.nr",
     "examples/core_stress.nr",
-    "examples/arena_showcase.nr"
+    "examples/arena_showcase.nr",
+    "examples/fancy_builtins.nr",
+    "examples/string_builtins.nr"
 )
 
 $failTests = @(
@@ -34,6 +36,72 @@ $failTests = @(
         Expected = @(
             "Could not read imported file:",
             "examples/modules/missing_utils.nr"
+        )
+    },
+    @{
+        Path = "examples/errors/bad_abs.nr"
+        Expected = @(
+            "abs() expects a number."
+        )
+    },
+    @{
+        Path = "examples/errors/bad_floor.nr"
+        Expected = @(
+            "floor() expects a number."
+        )
+    },
+    @{
+        Path = "examples/errors/bad_min_empty.nr"
+        Expected = @(
+            "min() expects at least 1 argument."
+        )
+    },
+    @{
+        Path = "examples/errors/bad_min_type.nr"
+        Expected = @(
+            "min() expects only numbers."
+        )
+    },
+    @{
+        Path = "examples/errors/bad_randint_zero.nr"
+        Expected = @(
+            "randint() max must be greater than 0."
+        )
+    },
+    @{
+        Path = "examples/errors/bad_values.nr"
+        Expected = @(
+            "values() expects a dictionary."
+        )
+    },
+    @{
+        Path = "examples/errors/bad_clock_ms.nr"
+        Expected = @(
+            "clock_ms() expects exactly 0 arguments but got 1."
+        )
+    },
+    @{
+        Path = "examples/errors/bad_lower.nr"
+        Expected = @(
+            "lower() expects a string."
+        )
+    },
+    @{
+        Path = "examples/errors/bad_contains.nr"
+        Expected = @(
+            "contains() expects the second argument to be a string."
+        )
+    },
+    @{
+        Path = "examples/errors/bad_substr_start.nr"
+        Expected = @(
+            "substr() start index out of bounds."
+        )
+    },
+    @{
+        Path = "examples/errors/bad_substr_length.nr"
+        Expected = @(
+            "substr() length cannot be negative."
         )
     }
 )

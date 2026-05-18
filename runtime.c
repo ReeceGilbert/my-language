@@ -1070,6 +1070,32 @@ static Value callBoundMethod(Runtime* runtime, BoundMethodObject* boundMethod, i
     return result;
 }
 
+static void runtimeNativeArityError(Runtime* runtime, NativeFunction* nativeFunction, int argCount) {
+    char message[256];
+    const char* name;
+    int expected;
+
+    if (nativeFunction == NULL) {
+        runtimeError(runtime, "Invalid native function.");
+        return;
+    }
+
+    name = nativeFunction->name == NULL ? "<native>" : nativeFunction->name;
+    expected = nativeFunction->arity;
+
+    snprintf(
+        message,
+        sizeof(message),
+        "%s() expects exactly %d argument%s but got %d.",
+        name,
+        expected,
+        expected == 1 ? "" : "s",
+        argCount
+    );
+
+    runtimeError(runtime, message);
+}
+
 static Value evalCall(Runtime* runtime, AstNode* node) {
     Value callee;
     Value result = makeNone();
@@ -1094,10 +1120,10 @@ static Value evalCall(Runtime* runtime, AstNode* node) {
                 runtimeError(runtime, "Invalid native function.");
             } else if (callee.as.nativeFunction->arity >= 0 &&
                        argCount != callee.as.nativeFunction->arity) {
-                runtimeError(runtime, "Wrong number of arguments for native function call.");
-            } else {
-                result = callee.as.nativeFunction->fn(runtime, argCount, args);
-            }
+                runtimeNativeArityError(runtime, callee.as.nativeFunction, argCount);
+                       } else {
+                           result = callee.as.nativeFunction->fn(runtime, argCount, args);
+                       }
             break;
 
         case VAL_FUNCTION:

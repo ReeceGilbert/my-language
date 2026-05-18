@@ -1,0 +1,1 @@
+substr("Nearoh", 1, -2)
